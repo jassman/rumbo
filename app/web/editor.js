@@ -322,6 +322,7 @@
         ${campo("ISIN o ticker", '<input name="identificador">', "opcional")}
         ${campo("Banco o bróker", '<input name="entidad">', "opcional")}
       </div>
+      <p class="ayuda" id="bDuplicado" hidden></p>
 
       <div class="siCotiza">${seccion("De dónde sale el precio")}
       <div class="rejilla tres">
@@ -390,6 +391,21 @@
     f.elements.tipo.onchange = ajusta;
     f.elements.fuente.onchange = ajusta;
     ajusta();
+    const avisaDuplicado = () => {
+      const el = $("#bDuplicado");
+      if (!el) return;
+      const ident = (f.elements.identificador.value || "").trim().toUpperCase();
+      if (!ident) { el.hidden = true; return; }
+      const otros = E.cfg.productos.filter(x => x.id !== p.id &&
+        ((x.identificador || "").toUpperCase() === ident || (x.codigo || "").toUpperCase() === ident));
+      if (!otros.length) { el.hidden = true; return; }
+      el.hidden = false;
+      el.innerHTML = `Ya tienes este ISIN en ${otros.map(x =>
+        `«${esc(x.corto || x.nombre)}»${x.cartera ? ` (cartera ${esc(x.cartera)})` : " (sin cartera)"}`).join(", ")}. ` +
+        `Si lo guardas se creará una <b>copia separada</b>: ponle arriba su <b>Cartera</b> (p. ej. Metal) para no mezclarlos al importar.`;
+    };
+    f.elements.identificador.oninput = avisaDuplicado;
+    avisaDuplicado();
 
     const buscar = async () => {
       const q = $("#bq").value.trim();
@@ -431,6 +447,7 @@
             aviso.textContent = rell.length ? `✓ Ficha rellenada desde Morningstar: ${rell.join(", ")}.` : "";
             res.querySelectorAll(".bItem").forEach(x => x.classList.toggle("sel", x === b));
             ajusta();
+            avisaDuplicado();
           };
         });
       } catch (x) { res.innerHTML = `<p class="neg">${esc(x.message)}</p>`; }
@@ -1095,7 +1112,7 @@
             <span class="alerta">Antes, borra (o tapa en las capturas) tu nombre, DNI, IBAN, números de cuenta y cualquier dato personal.</span></li>
           <li>Copia su respuesta y pégala aquí:</li></ol>
         <textarea id="imTexto" class="imTexto" rows="8" spellcheck="false"
-          placeholder="fecha;identificador;nombre;tipo_producto;tipo_movimiento;unidades;importe;moneda;comision;nota"></textarea>`;
+          placeholder="fecha;identificador;nombre;tipo_producto;tipo_movimiento;unidades;importe;moneda;comision;cartera;nota"></textarea>`;
     }
     return `${exito}<section class="tarjeta"><header><h2>Importar datos</h2>
         <span class="subt">Trae tus movimientos de golpe. Antes de guardar nada verás una vista previa.</span></header>

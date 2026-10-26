@@ -25,14 +25,16 @@ EXPLICACION = [
     ("importe", "Sí", "Dinero total. Compra: lo que salió de tu cuenta, con comisiones. Venta o dividendo: lo que entró."),
     ("moneda", "No", "Moneda del importe. Si no es EUR, se convierte con el cambio de ese día. Vacío = EUR."),
     ("comision", "No", "Comisión de la operación, ya incluida en el importe."),
+    ("cartera", "No", "Cartera a la que va (Metal, Rock…). Si el mismo ISIN está en dos carteras, es obligatoria: "
+                       "así no se mezclan, y si no existe se crea una copia separada."),
     ("nota", "No", "Lo que quieras apuntar."),
 ]
 EJEMPLO = [
-    (dt.date(2025, 3, 10), "IE00BYX5NX33", "Fidelity MSCI World", "fondo", "compra", 62.5, 900, "EUR", None, "Aportación mensual"),
-    (dt.date(2025, 4, 2), "AAPL", "Apple", "accion", "compra", 5, 1050, "USD", 2, ""),
-    (dt.date(2025, 5, 15), "BTC-EUR", "Bitcoin", "cripto", "compra", 0.01, 600, "EUR", None, ""),
-    (dt.date(2025, 6, 30), "AAPL", "Apple", "accion", "dividendo", None, 1.25, "USD", None, ""),
-    (dt.date(2025, 6, 30), "", "Cuenta del banco", "efectivo", "saldo", None, 2500, "EUR", None, "Saldo a fin de mes"),
+    (dt.date(2025, 3, 10), "IE00BYX5NX33", "Fidelity MSCI World", "fondo", "compra", 62.5, 900, "EUR", None, "", "Aportación mensual"),
+    (dt.date(2025, 4, 2), "AAPL", "Apple", "accion", "compra", 5, 1050, "USD", 2, "", ""),
+    (dt.date(2025, 5, 15), "BTC-EUR", "Bitcoin", "cripto", "compra", 0.01, 600, "EUR", None, "", ""),
+    (dt.date(2025, 6, 30), "AAPL", "Apple", "accion", "dividendo", None, 1.25, "USD", None, "", ""),
+    (dt.date(2025, 6, 30), "", "Cuenta del banco", "efectivo", "saldo", None, 2500, "EUR", None, "", "Saldo a fin de mes"),
 ]
 
 
@@ -56,7 +58,7 @@ def _cabecera(hoja, columnas, anchos):
 
 def prepara(hoja, filas):
     """Hoja con las columnas de la plantilla y esas filas."""
-    _cabecera(hoja, COLUMNAS, [13, 16, 28, 15, 17, 12, 12, 9, 11, 30])
+    _cabecera(hoja, COLUMNAS, [13, 16, 28, 15, 17, 12, 12, 9, 11, 14, 30])
     for f in filas:
         hoja.append(list(f))
     for fila in hoja.iter_rows(min_row=2, max_row=max(hoja.max_row, 500)):
@@ -131,15 +133,15 @@ def mis_datos(cfg):
             for prod_, tipo, u in ((p, "traspaso_salida", m.get("unidades")), (d, "traspaso_entrada", m.get("unidadesDestino"))):
                 filas.append((fecha(m["fecha"]), prod_.get("identificador") or prod_.get("codigo") or "",
                               prod_.get("nombre", ""), prod_.get("tipo", ""), tipo, u or None, m.get("importe"),
-                              "EUR", None, m.get("nota", "")))
+                              "EUR", None, prod_.get("cartera", ""), m.get("nota", "")))
             continue
         filas.append((fecha(m["fecha"]), p.get("identificador") or p.get("codigo") or "", p.get("nombre", ""),
                       p.get("tipo", ""), m.get("tipo"), m.get("unidades") or None, m.get("importe"), "EUR",
-                      m.get("comision") or None, m.get("nota", "")))
+                      m.get("comision") or None, p.get("cartera", ""), m.get("nota", "")))
     for v in cfg.get("valoraciones", []):
         p = prods.get(v.get("producto"), {})
         filas.append((fecha(v["fecha"]), p.get("identificador") or p.get("codigo") or "", p.get("nombre", ""),
-                      p.get("tipo", ""), "saldo", None, v.get("valor"), "EUR", None, ""))
+                      p.get("tipo", ""), "saldo", None, v.get("valor"), "EUR", None, p.get("cartera", ""), ""))
     filas.sort(key=lambda f: f[0])
 
     libro = Workbook()
@@ -148,13 +150,13 @@ def mis_datos(cfg):
     prepara(hoja, filas)
 
     ficha = libro.create_sheet("Productos")
-    _cabecera(ficha, ["Nombre", "Tipo", "Identificador", "Precio de", "Código", "Moneda", "Entidad",
-                      "Comisión anual", "Riesgo (1-7)"], [34, 12, 16, 14, 16, 9, 18, 15, 13])
+    _cabecera(ficha, ["Nombre", "Tipo", "Identificador", "Precio de", "Código", "Moneda", "Entidad", "Cartera",
+                      "Comisión anual", "Riesgo (1-7)"], [34, 12, 16, 14, 16, 9, 18, 14, 15, 13])
     fuentes = {"morningstar": "Morningstar", "yahoo": "Yahoo Finance", "coingecko": "CoinGecko", "manual": "A mano"}
     for p in cfg.get("productos", []):
         ficha.append([p.get("nombre", ""), p.get("tipo", ""), p.get("identificador", ""),
                       fuentes.get(p.get("fuente"), p.get("fuente", "")), p.get("codigo", ""), p.get("moneda", "EUR"),
-                      p.get("entidad", ""), p.get("ter"), p.get("riesgo")])
+                      p.get("entidad", ""), p.get("cartera", ""), p.get("ter"), p.get("riesgo")])
         ficha.cell(ficha.max_row, 8).number_format = "0.00%"
 
     salida = io.BytesIO()

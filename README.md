@@ -350,6 +350,7 @@ Descarga la plantilla desde la app (**Excel** o **CSV**). Trae desplegables, una
 | `importe` | Sí | Dinero total. Compra: lo que salió de tu cuenta, con comisiones. Venta o dividendo: lo que entró. |
 | `moneda` | No | Moneda del importe. Si no es EUR, se convierte con el cambio de ese día. |
 | `comision` | No | Comisión de la operación, ya incluida en el importe. |
+| `cartera` | No | Cartera a la que va (Metal, Rock…). Obligatoria si el mismo ISIN está en dos carteras: así no se mezclan. |
 | `nota` | No | Lo que quieras. |
 
 ### Con ayuda de una IA (cualquier extracto)
@@ -370,7 +371,7 @@ Una IA gratuita (ChatGPT, Gemini, Copilot…) puede convertir el extracto de tu 
 Convierte el extracto de mi banco o bróker (el texto que pego al final, o los PDF o capturas de pantalla que adjunto) en una tabla para importarla en mi app de patrimonio. En las capturas de órdenes, lee con cuidado la fecha de ejecución, los títulos, el precio y el importe de cada una.
 
 Devuélveme SOLO un CSV dentro de un bloque de código, sin explicaciones, separado por punto y coma (;) y con esta cabecera exacta:
-fecha;identificador;nombre;tipo_producto;tipo_movimiento;unidades;importe;moneda;comision;nota
+fecha;identificador;nombre;tipo_producto;tipo_movimiento;unidades;importe;moneda;comision;cartera;nota
 
 Reglas para cada columna:
 - fecha: la fecha de la operación (o de ejecución), en formato AAAA-MM-DD.
@@ -382,6 +383,7 @@ Reglas para cada columna:
 - importe: el dinero total de la operación, en positivo, con punto decimal y sin símbolo de moneda. En una compra, lo que salió de la cuenta con las comisiones incluidas; en una venta o un dividendo, lo que entró.
 - moneda: la moneda del importe (EUR, USD…).
 - comision: la comisión de esa operación si aparece (ya va incluida en el importe). Si no, vacío.
+- cartera: la cartera a la que va, si aparece (Metal, Rock…). Obligatoria si el mismo ISIN está en dos carteras. Si no, vacío.
 - nota: vacío, o una nota muy breve.
 
 Importante:

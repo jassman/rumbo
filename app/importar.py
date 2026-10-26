@@ -23,7 +23,7 @@ from . import almacen, buscar, motor
 from .motor import num_es, valor_en
 
 COLUMNAS = ["fecha", "identificador", "nombre", "tipo_producto", "tipo_movimiento",
-            "unidades", "importe", "moneda", "comision", "nota"]
+            "unidades", "importe", "moneda", "comision", "cartera", "nota"]
 
 # Nombres alternativos que se aceptan en la cabecera.
 SINONIMOS = {
@@ -36,6 +36,7 @@ SINONIMOS = {
     "importe": ["importe", "importe eur", "total", "amount", "importe total"],
     "moneda": ["moneda", "divisa", "currency"],
     "comision": ["comision", "comisiones", "fee", "gastos"],
+    "cartera": ["cartera", "portfolio", "cartera nombre"],
     "nota": ["nota", "notas", "comentario", "observaciones"],
 }
 TIPO_MOV = {
@@ -300,17 +301,33 @@ class Plan:
         self.errores.append({"fila": fila, "mensaje": mensaje})
 
 
-def _producto_existente(cfg, identificador, nombre):
+def _coincidencias(cfg, identificador, nombre):
+    """Todos los productos que casan con ese identificador o nombre (puede haber
+    varios si el mismo ISIN está en distintas carteras)."""
     ident = (identificador or "").strip().upper()
-    for p in cfg.get("productos", []):
-        if ident and ident in ((p.get("identificador") or "").upper(), (p.get("codigo") or "").upper()):
-            return p
+    if ident:
+        encontrados = [p for p in cfg.get("productos", [])
+                       if ident in ((p.get("identificador") or "").upper(), (p.get("codigo") or "").upper())]
+        if encontrados:
+            return encontrados
     nom = sin_tildes(nombre)
     if nom and not ident:
-        for p in cfg.get("productos", []):
-            if nom in (sin_tildes(p.get("nombre")), sin_tildes(p.get("corto"))):
+        return [p for p in cfg.get("productos", [])
+                if nom in (sin_tildes(p.get("nombre")), sin_tildes(p.get("corto")))]
+    return []
+
+
+def _producto_existente(cfg, identificador, nombre, cartera=""):
+    candidatos = _coincidencias(cfg, identificador, nombre)
+    if not candidatos:
+        return None
+    cart = (cartera or "").strip().lower()
+    if cart:
+        for p in candidatos:
+            if (p.get("cartera") or "").strip().lower() == cart:
                 return p
-    return None
+        return None
+    return candidatos[0]
 
 
 class Resolutor:
@@ -320,12 +337,26 @@ class Resolutor:
         self.cfg, self.plan, self.carpeta = cfg, plan, carpeta
         self.cache, self.series, self.frescas = {}, {}, set()
 
-    def producto(self, fila, identificador, nombre, tipo_prod):
-        clave = ((identificador or "").strip().upper(), sin_tildes(nombre) if not identificador else "")
+    def producto(self, fila, identificador, nombre, tipo_prod, cartera=""):
+        cart = (cartera or "").strip()
+        clave = ((identificador or "").strip().upper(), sin_tildes(nombre) if not identificador else "",
+                 cart.lower())
         if clave in self.cache:
             return self.cache[clave]
         ref = None
-        existente = _producto_existente(self.cfg, identificador, nombre)
+        candidatos = _coincidencias(self.cfg, identificador, nombre)
+        if len(candidatos) > 1 and not cart and ((identificador or "").strip()):
+            # Mismo ISIN en varios productos/carteras y la fila no dice a cuál va:
+            # no se adivina, se pide que lo indique en la columna «cartera».
+            nombres = ", ".join(f"«{(p.get('corto') or p.get('nombre'))}»"
+                                + (f" (cartera {p.get('cartera')})" if p.get("cartera") else " (sin cartera)")
+                                for p in candidatos)
+            self.plan.error(fila, f"«{(identificador or '').strip()}» está en varios productos: {nombres}. "
+                                  "Pon en la columna «cartera» a cuál va cada fila (p. ej. Metal) y vuelve a importar. "
+                                  "Si es para una cartera nueva, pon su nombre y se creará una copia separada.")
+            self.cache[clave] = None
+            return None
+        existente = _producto_existente(self.cfg, identificador, nombre, cart)
         if existente:
             ref = existente["id"]
         elif identificador:
@@ -344,7 +375,7 @@ class Resolutor:
                          "identificador": identificador.strip(), "fuente": r["fuente"], "codigo": r["codigo"],
                          "moneda": r.get("moneda") or "EUR", "vivo": r.get("vivo") or "",
                          "ter": fi.get("ter"), "riesgo": fi.get("riesgo"), "clase": fi.get("clase") or "",
-                         "gestora": fi.get("gestora") or "", "largoPlazo": True}
+                         "cartera": cart, "gestora": fi.get("gestora") or "", "largoPlazo": True}
                 ref = self._nuevo(datos, r)
             else:
                 self.plan.error(fila, f"No encuentro «{identificador}» con precio en internet. Si no cotiza, "
@@ -352,7 +383,7 @@ class Resolutor:
                                       "identificador, y vuelve a importar.")
         elif nombre:
             tipo = tipo_prod if tipo_prod in motor.TIPOS else "otro"
-            ref = self._nuevo({"nombre": nombre, "tipo": tipo, "fuente": "manual",
+            ref = self._nuevo({"nombre": nombre, "tipo": tipo, "fuente": "manual", "cartera": cart,
                                "largoPlazo": tipo not in ("efectivo", "deuda")}, None)
         else:
             self.plan.error(fila, "No tiene identificador ni nombre: no sé de qué producto es.")
@@ -397,6 +428,7 @@ def preparar_tabla(cfg, filas, carpeta):
         tprod = TIPO_PROD.get(sin_tildes(f.get("tipo_producto")), "")
         importe, unidades, comision = (lee_numero(f.get(k)) for k in ("importe", "unidades", "comision"))
         moneda = (str(f.get("moneda") or "").strip() or "EUR").upper()
+        cartera = str(f.get("cartera") or "").strip()
         nota = str(f.get("nota") or "").strip()
 
         if not fecha:
@@ -419,7 +451,7 @@ def preparar_tabla(cfg, filas, carpeta):
             continue
         if tipo == "saldo" and not ident:
             tprod = tprod or "efectivo"
-        ref = res.producto(n, ident, nombre, tprod)
+        ref = res.producto(n, ident, nombre, tprod, cartera)
         if not ref:
             continue
         marcas = []
@@ -513,6 +545,11 @@ def preparar_myinvestor(cfg, archivos, carpeta):
         lotes, reembolsos = leer_csv_myinvestor(contenido)
         if not lotes and not reembolsos:
             plan.error(nombre, "No parece un extracto «Plusvalías y minusvalías» de MyInvestor, o está vacío.")
+            continue
+        if len(_coincidencias(cfg, isin, "")) > 1:
+            plan.error(nombre, f"«{isin}» está en varios productos (distintas carteras). El CSV de MyInvestor "
+                               "no dice a cuál va: impórtalo con la plantilla poniendo la columna «cartera», "
+                               "o deja un solo producto con ese ISIN.")
             continue
         ref = res.producto(nombre, isin, "", "fondo")
         if not ref:

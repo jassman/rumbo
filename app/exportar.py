@@ -22,7 +22,7 @@ import re
 
 # Campos con euros (o unidades, que multiplicadas por el precio darían euros).
 CAMPOS_DINERO = {
-    "valor", "aportado", "plusvalia", "serie", "serieAportado", "importe", "valorExtracto",
+    "valor", "aportado", "plusvalia", "serie", "serieAportado", "serieSinCoste", "importe", "valorExtracto",
     "realizado", "participaciones", "titulos", "valorConCoste", "patrimonio", "ritmoMensual",
     "anual", "base", "compraventaPagada", "inicio", "fin", "mercado", "nuevo",
     "comision", "min", "max", "mediana", "p33", "p67", "snapshots", "flujos", "tuya", "tuValor",

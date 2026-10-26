@@ -51,6 +51,25 @@ test("métricas: valor, plusvalía, ritmo, racha y peor caída", () => {
   cerca(m.tir, 0.10, 0.003);                         // 1.000 → 1.100 en un año
 });
 
+test("tu dinero vs mercado: lo sin coste anotado cuenta como tuyo", () => {
+  const m = C.metricas([A, B], D);
+  assert.deepEqual(m.serieSinCoste, [0, 500, 500, 500]);   // B no tiene coste: todo su valor
+  const r = C.repartoDinero(m.serie, m.serieAportado, m.serieSinCoste);
+  assert.deepEqual(r.tuyo, [1000, 1500, 1400, 1500]);       // 1.000 del fondo + 500 de la cuenta
+  assert.deepEqual(r.mercado, [0, 200, 0, 100]);            // solo la plusvalía del fondo
+  assert.equal(r.tuyo[1] + r.mercado[1], 1700);             // entre los dos, todo el valor
+  assert.equal(r.bajoCoste, true);                          // el 900 está por debajo de lo aportado
+  assert.equal(r.haySinCoste, true);
+});
+
+test("repartoDinero sin nada sin coste: como antes", () => {
+  const r = C.repartoDinero([1000, 1200], [1000, 1000], [0, 0]);
+  assert.deepEqual(r.tuyo, [1000, 1000]);
+  assert.deepEqual(r.mercado, [0, 200]);
+  assert.equal(r.bajoCoste, false);
+  assert.equal(r.haySinCoste, false);
+});
+
 test("métricas con el valor en vivo y con la cartera filtrada", () => {
   const vivo = p => (p.id === "a" ? 1210 : p.valor);
   assert.equal(C.metricas([A, B], D, vivo).plusvalia, 210);

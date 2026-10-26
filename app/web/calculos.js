@@ -59,13 +59,19 @@
     const n = D.fechas.length;
     const serie = new Array(n).fill(0);
     const serieAp = new Array(n).fill(0);
+    const serieSinCoste = new Array(n).fill(0);
     let valor = 0, aportado = 0, valorConCoste = 0, valorTir = 0, nAp = 0, realizado = 0;
     const flujos = [];
 
     lista.forEach(p => {
       const s = p.serie || [], sa = p.serieAportado || [];
       for (let i = 0; i < n; i++) {
-        if (s[i] != null) serie[i] += s[i];
+        if (s[i] != null) {
+          serie[i] += s[i];
+          // Sin coste anotado (cuentas, inmuebles, valores a mano sin aportado):
+          // es dinero tuyo, no ganancias del mercado.
+          if (sa[i] == null) serieSinCoste[i] += s[i];
+        }
         if (sa[i] != null) serieAp[i] += sa[i];
       }
       valor += valorDe(p);
@@ -119,8 +125,31 @@
       valor, aportado, valorConCoste, plusvalia, realizado,
       rentabilidad: aportado ? plusvalia / aportado : null,
       tir, numAportaciones: nAp, ritmo, racha, caida, caidaFecha,
-      serie, serieAportado: serieAp,
+      serie, serieAportado: serieAp, serieSinCoste,
     };
+  }
+
+  /* ---------------------------------------------- tu dinero contra el mercado */
+  /**
+   * Reparte el valor de cada día entre lo que pusiste tú y lo que puso el mercado.
+   * Lo que no tiene coste anotado (cuentas, inmuebles...) cuenta como dinero tuyo:
+   * si no, una cuenta con 20.000 € saldría como 20.000 € «puestos por el mercado».
+   */
+  function repartoDinero(serie, serieAportado, serieSinCoste) {
+    const sc = serieSinCoste || [];
+    const tuyo = [], mercado = [];
+    let bajoCoste = false, haySinCoste = false;
+    for (let i = 0; i < serie.length; i++) {
+      const v = serie[i];
+      if (v == null) { tuyo.push(null); mercado.push(null); continue; }
+      const ap = serieAportado[i] || 0, sin = sc[i] || 0;
+      if (sin > 0) haySinCoste = true;
+      const conCoste = v - sin;
+      if (conCoste > 0 && conCoste < ap - 0.01) bajoCoste = true;
+      tuyo.push(Math.min(ap, conCoste) + sin);
+      mercado.push(Math.max(0, conCoste - ap));
+    }
+    return { tuyo, mercado, bajoCoste, haySinCoste };
   }
 
   /* ---------------------------------------------- dónde está tu dinero: países y sectores */
@@ -355,7 +384,7 @@
   }
 
   return {
-    leeImporte, xirr, metricas, agregaExposicion, esLiquidez, resumenLiquidez,
+    leeImporte, xirr, metricas, repartoDinero, agregaExposicion, esLiquidez, resumenLiquidez,
     gruposReparto, filasReparto, repartirAportacion, normalizaReparto, tipoReparto, TIPOS_REPARTO,
     cuentaPorDefecto, cuentaEnReparto, FUERA_DE_BOLSA, periodicasPendientes,
     resumenParaCompartir,

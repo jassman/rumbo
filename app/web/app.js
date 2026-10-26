@@ -521,20 +521,20 @@
         overlay: { nombre: "Aportado", valores: corta(m.serieAportado) },
       });
     } else if (estado.vista === "dinero") {
-      // Lo que pusiste tú contra lo que ha puesto el mercado.
-      const tuyo = m.serie.map((v, i) => Math.min(m.serieAportado[i], v));
-      const mercado = m.serie.map((v, i) => Math.max(0, v - m.serieAportado[i]));
-      const bajoCoste = m.serie.some((v, i) => v > 0 && v < m.serieAportado[i] - 0.01);
+      // Lo que pusiste tú contra lo que ha puesto el mercado. Lo que no tiene
+      // coste anotado (cuentas, inmuebles...) cuenta como dinero tuyo.
+      const rep = C.repartoDinero(m.serie, m.serieAportado, m.serieSinCoste);
       G.areaApilada(cont, {
         fechas, alto: 330,
         series: [
-          { nombre: "Lo que pusiste tú", color: G.css("--tinta3"), valores: corta(tuyo) },
-          { nombre: "Lo que puso el mercado", color: G.css("--s3"), valores: corta(mercado) },
+          { nombre: "Lo que pusiste tú", color: G.css("--tinta3"), valores: corta(rep.tuyo) },
+          { nombre: "Lo que puso el mercado", color: G.css("--s3"), valores: corta(rep.mercado) },
         ],
       });
-      nota = bajoCoste
+      nota = rep.bajoCoste
         ? "Hubo días por debajo de lo aportado: ahí la banda verde desaparece."
         : "La banda verde es rentabilidad, no dinero tuyo.";
+      if (rep.haySinCoste) nota += " Lo que no tiene coste anotado (cuentas, inmuebles…) cuenta como dinero tuyo.";
     } else if (estado.vista === "reparto") {
       const series = entradasGrafico(prods);
       const tot = fechas.map((_, i) => series.reduce((a, s) => a + (s.valores[i] || 0), 0));

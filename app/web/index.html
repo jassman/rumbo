@@ -773,6 +773,14 @@ body.video .tarjetaCanal{display:none}
     <div class="chips" id="chips"></div>
   </section>
 
+  <section class="tarjeta" id="seccionCarteras" hidden style="margin-top:16px">
+    <header>
+      <h2>Carteras</h2>
+      <span class="subt">Tus fondos agrupados: 1 posición fuera, N dentro. «Ver solo» filtra todo el panel.</span>
+    </header>
+    <div id="carteras"></div>
+  </section>
+
   <div class="rejilla2">
     <section class="tarjeta">
       <header>
@@ -859,6 +867,7 @@ body.video .tarjetaCanal{display:none}
       <button class="btn" id="mesPrev" title="Mes anterior">‹</button>
       <select id="mesSel" aria-label="Elegir mes"></select>
       <button class="btn" id="mesNext" title="Mes siguiente">›</button>
+      <select id="mesCartera" aria-label="Filtrar por cartera"></select>
       <div class="sep"></div>
       <span class="subt" id="mesNota"></span>
     </div>
@@ -897,6 +906,7 @@ body.video .tarjetaCanal{display:none}
     <header><h2>Rentabilidad por año natural</h2><span class="subt" id="notaAnual"></span></header>
     <div class="envGraf" id="grafAnual"></div>
     <div class="filaTabla">
+      <select id="anualCartera" aria-label="Filtrar por cartera"></select>
       <span class="subt" id="notaTablaAnual"></span>
     </div>
     <div class="tablaEnv"><table class="dt" id="tablaAnual"></table></div>

@@ -99,6 +99,7 @@
     ordenTabla: { col: "fecha", desc: true },
     btcVivo: null,
     compRef: recuerda.lee("patrimonio.compRef") || "mundo",
+    soloCartera: recuerda.lee("patrimonio.cartera") || null,
     verVendidos: recuerda.lee("patrimonio.vendidos") === "1",
     moneda: recuerda.lee("patrimonio.moneda") || "EUR",
     rangoFondo: "todo",
@@ -186,8 +187,35 @@
   }
 
   const TODOS = () => D.productos.concat(D.otrosActivos || [], D.pasivos || []);
-  const visibles = () => TODOS().filter(p => !estado.ocultos.has(p.id));
-  const filtrando = () => estado.ocultos.size > 0;
+  // Carteras: fondos con la misma etiqueta «cartera» (p. ej. Metal) se ven como 1 posición.
+  const carteras = () => {
+    const m = new Map();
+    TODOS().forEach(p => {
+      if (p.cartera) {
+        if (!m.has(p.cartera)) m.set(p.cartera, []);
+        m.get(p.cartera).push(p);
+      }
+    });
+    return [...m.entries()].map(([nombre, productos]) => ({ nombre, productos }))
+      .sort((a, b) => pesoCartera(b) - pesoCartera(a));
+  };
+  const pesoCartera = ct => ct.productos.reduce((s, p) => s + (valorDe(p) || 0), 0);
+  // La cartera elegida, si aún existe. Si se borró o renombró, es como no haber elegido.
+  const carteraActiva = () => {
+    const n = estado.soloCartera;
+    return n && carteras().some(c => c.nombre === n) ? n : null;
+  };
+  const verSoloCartera = n => {
+    estado.soloCartera = n;
+    recuerda.guarda("patrimonio.cartera", n || "");
+    estado.tablaFiltro = "todos";
+  };
+  const enCarteraActiva = p => {
+    const c = carteraActiva();
+    return !c || (p.cartera || "") === c;
+  };
+  const visibles = () => TODOS().filter(p => !estado.ocultos.has(p.id) && enCarteraActiva(p));
+  const filtrando = () => estado.ocultos.size > 0 || !!carteraActiva();
   const buscaProd = id => TODOS().find(p => p.id === id);
   // Lo que ya vendiste del todo: sigue contando en la historia, la TIR y lo ganado,
   // pero en el panel no ocupa sitio con 0 € salvo que pidas verlo.
@@ -313,6 +341,16 @@
       b.onclick = () => { pr.fn(); pintaPatrimonio(); };
       cont.appendChild(b);
     });
+    // Una cartera, una posición: ver solo sus fondos agrupados en todo el panel.
+    carteras().forEach(ct => {
+      const b = document.createElement("button");
+      b.className = "filtro preset";
+      b.setAttribute("aria-pressed", String(carteraActiva() === ct.nombre));
+      b.textContent = "◈ " + ct.nombre;
+      b.title = `Ver solo la cartera ${ct.nombre} (${ct.productos.length} fondos)`;
+      b.onclick = () => { verSoloCartera(carteraActiva() === ct.nombre ? null : ct.nombre); pintaPatrimonio(); };
+      cont.appendChild(b);
+    });
   }
 
   function pintaHero(mVis, mTodo) {
@@ -351,7 +389,7 @@
     }
     $("#heroSub").innerHTML = partes.join('<span style="color:var(--tinta3)">·</span>');
     const reset = $("#btnReset");
-    if (reset) reset.onclick = () => { estado.ocultos.clear(); pintaPatrimonio(); };
+    if (reset) reset.onclick = () => { estado.ocultos.clear(); verSoloCartera(null); pintaPatrimonio(); };
 
     if (filtro) { $("#progEnv").hidden = true; return; }
 
@@ -388,8 +426,11 @@
     $("#kpis").innerHTML = kpis.map(k =>
       `<div class="kpi"><div class="e">${k.e}</div>
        <div class="v ${k.cl || ""}">${k.v}</div><div class="n">${k.n}</div></div>`).join("");
-    $("#kpisNota").textContent = filtrando()
-      ? `Métricas de los ${visibles().length} componentes activos, no del patrimonio completo.` : "";
+    const cAct = carteraActiva();
+    $("#kpisNota").textContent = cAct
+      ? `Solo Cartera ${cAct}: ${visibles().length} componentes agrupados.`
+      : filtrando()
+        ? `Métricas de los ${visibles().length} componentes activos, no del patrimonio completo.` : "";
   }
 
   function pintaPrincipal(m) {
@@ -445,7 +486,8 @@
   function pintaChips() {
     const cont = $("#chips");
     cont.innerHTML = "";
-    enPanel().forEach(p => {
+    const cAct = carteraActiva();
+    enPanel().filter(p => !cAct || (p.cartera || "") === cAct).forEach(p => {
       const oculto = estado.ocultos.has(p.id);
       const b = document.createElement("button");
       b.className = "chip" + (oculto ? " apagado" : "");
@@ -461,6 +503,40 @@
       b.onclick = () => { estado.fondo = p.id; irA("fondos"); };
       cont.appendChild(b);
       G.mini(b.querySelector(".sp"), corta(p.serie), color(p));
+    });
+  }
+
+  // Carteras: 1 posición fuera (el subtotal), N fondos dentro. El botón «Ver solo»
+  // filtra todo el panel —Patrimonio, Mes, Rendimiento y Fondos— a esa cartera.
+  function pintaCarteras() {
+    const sec = $("#seccionCarteras");
+    if (!sec) return;
+    const lista = carteras();
+    if (!lista.length) { sec.hidden = true; return; }
+    sec.hidden = false;
+    const cAct = carteraActiva();
+    const cuerpo = $("#carteras");
+    cuerpo.innerHTML = `<div class="tablaEnv"><table class="dt"><thead><tr><th>Cartera</th><th>Fondos</th>
+      <th>Valor</th><th>Aportado</th><th>Plusvalía</th><th>Rent.</th><th>TIR</th><th></th></tr></thead>
+      <tbody>${lista.map(ct => {
+        const m = metricas(ct.productos);
+        const pl = m.plusvalia, rt = m.rentabilidad;
+        const cls = v => (v == null || v >= 0 ? "pos" : "neg");
+        return `<tr class="${cAct === ct.nombre ? "destacada" : ""}">
+          <td><a href="#" data-ficha="${escH(ct.nombre)}"><i class="pt" style="background:${color(ct.productos[0])}"></i>◈ ${escH(ct.nombre)}</a></td>
+          <td>${ct.productos.length}</td>
+          <td>${G.fmtEur(m.valor)}</td>
+          <td>${m.aportado ? G.fmtEur(m.aportado) : "—"}</td>
+          <td class="${cls(pl)}">${pl != null ? G.fmtEurSigno(pl) : "—"}</td>
+          <td class="${cls(rt)}">${rt != null ? G.fmtPctSigno(rt, 1) : "—"}</td>
+          <td class="${cls(m.tir)}">${m.tir != null ? G.fmtPctSigno(m.tir) : "—"}</td>
+          <td><button class="btn" data-cart="${escH(ct.nombre)}">${cAct === ct.nombre ? "Viendo ✓" : "Ver solo"}</button></td></tr>`;
+      }).join("")}</tbody></table></div>`;
+    cuerpo.querySelectorAll("[data-cart]").forEach(b => {
+      b.onclick = () => { verSoloCartera(cAct === b.dataset.cart ? null : b.dataset.cart); pintaPatrimonio(); };
+    });
+    cuerpo.querySelectorAll("[data-ficha]").forEach(a => {
+      a.onclick = e => { e.preventDefault(); estado.fondo = "cartera:" + a.dataset.ficha; irA("fondos"); };
     });
   }
 
@@ -670,15 +746,19 @@
 
   function pintaTabla() {
     const filas = [];
-    D.productos.forEach(p => (p.aportaciones || []).forEach(a => {
-      if (!a.importe) return;
-      filas.push({
-        fecha: a.fecha, producto: p.corto || p.nombre, color: color(p), id: p.id,
-        importe: a.importe, valor: a.valor,
-        pl: a.valor != null ? a.valor - a.importe : null,
-        rent: a.valor != null && a.importe ? (a.valor - a.importe) / a.importe : null,
+    const cAct = carteraActiva();
+    D.productos.forEach(p => {
+      if (cAct && (p.cartera || "") !== cAct) return;
+      (p.aportaciones || []).forEach(a => {
+        if (!a.importe) return;
+        filas.push({
+          fecha: a.fecha, producto: p.corto || p.nombre, color: color(p), id: p.id,
+          importe: a.importe, valor: a.valor,
+          pl: a.valor != null ? a.valor - a.importe : null,
+          rent: a.valor != null && a.importe ? (a.valor - a.importe) / a.importe : null,
+        });
       });
-    }));
+    });
     const f = estado.tablaFiltro === "todos" ? filas : filas.filter(x => x.id === estado.tablaFiltro);
     const o = estado.ordenTabla;
     f.sort((a, b) => {
@@ -720,6 +800,7 @@
     pintaKPIs(mVis);
     pintaPrincipal(mVis);
     pintaChips();
+    pintaCarteras();
     pintaDistribucion();
     pintaBarras();
     pintaExpoTotal();
@@ -761,6 +842,18 @@
     $("#mesPrev").disabled = estado.mes === 0;
     $("#mesNext").disabled = estado.mes === rm.length - 1;
 
+    // Filtro por cartera, compartido con el resto de pestañas.
+    const selC = $("#mesCartera");
+    if (selC) {
+      const lista = carteras();
+      const html = `<option value="">Todas</option>` +
+        lista.map(c => `<option value="${escH(c.nombre)}">◈ ${escH(c.nombre)}</option>`).join("");
+      if (selC.innerHTML !== html) selC.innerHTML = html;
+      selC.value = carteraActiva() || "";
+      selC.hidden = !lista.length;
+      selC.onchange = () => { verSoloCartera(selC.value || null); pintaMes(); };
+    }
+
     const cambio = r.fin - r.inicio;
     // El titular es el cambio REAL: lo que aportaste mas lo que hizo el mercado.
     // Incorporar una cuenta al panel mueve el saldo pero no es dinero ganado,
@@ -797,29 +890,71 @@
       `<div class="mesT" style="--c:${t.c}"><span class="barra"></span>
         <div class="e">${t.e}</div><div class="v ${t.cl || ""}">${t.v}</div><div class="n">${t.n}</div></div>`).join("");
 
-    // tabla por componente
-    const filas = TODOS().map(p => ({ p, d: r.porProducto[p.id] })).filter(x => x.d);
+    // tabla por componente, con subtotal por cartera (1 posición fuera, N dentro)
+    const cAct = carteraActiva();
+    const filas = TODOS().map(p => ({ p, d: r.porProducto[p.id] }))
+      .filter(x => x.d && (!cAct || (x.p.cartera || "") === cAct));
     const hayNuevo = filas.some(x => x.d.nuevo);
     const colNuevo = hayNuevo ? "<th>Entra al panel</th>" : "";
+    const filaHtml = ({ p, d }) => {
+      const var_ = d.fin - d.inicio;
+      return `<tr>
+        <td><i class="pt" style="background:${color(p)}"></i>${p.corto || p.nombre}${p.cartera ? ` <small style="color:var(--tinta3)">· ${escH(p.cartera)}</small>` : ""}</td>
+        <td>${G.fmtEur(d.inicio)}</td>
+        <td>${d.aportado ? G.fmtEur(d.aportado) : "—"}</td>
+        <td class="${d.mercado >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(d.mercado)}</td>
+        ${hayNuevo ? `<td>${d.nuevo ? G.fmtEur(d.nuevo) : "—"}</td>` : ""}
+        <td>${G.fmtEur(d.fin)}</td>
+        <td class="${var_ >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(var_)}</td></tr>`;
+    };
+    const subtotalHtml = (nombre, grupo) => {
+      const s = { inicio: 0, aportado: 0, mercado: 0, nuevo: 0, fin: 0 };
+      grupo.forEach(({ d }) => {
+        s.inicio += d.inicio || 0; s.aportado += d.aportado || 0;
+        s.mercado += d.mercado || 0; s.nuevo += d.nuevo || 0; s.fin += d.fin || 0;
+      });
+      const var_ = s.fin - s.inicio;
+      return `<tr class="destacada">
+        <td><i class="pt" style="background:${color(grupo[0].p)}"></i>◈ ${escH(nombre)} (${grupo.length})</td>
+        <td>${G.fmtEur(s.inicio)}</td>
+        <td>${s.aportado ? G.fmtEur(s.aportado) : "—"}</td>
+        <td class="${s.mercado >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(s.mercado)}</td>
+        ${hayNuevo ? `<td>${s.nuevo ? G.fmtEur(s.nuevo) : "—"}</td>` : ""}
+        <td>${G.fmtEur(s.fin)}</td>
+        <td class="${var_ >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(var_)}</td></tr>`;
+    };
+    // Agrupa manteniendo el orden: sin cartera van sueltas, cada cartera con su subtotal.
+    const grupos = [];
+    const pos = new Map();
+    filas.forEach(x => {
+      const c = x.p.cartera || "";
+      if (!c) { grupos.push({ nombre: null, filas: [x] }); return; }
+      if (!pos.has(c)) { pos.set(c, grupos.length); grupos.push({ nombre: c, filas: [] }); }
+      grupos[pos.get(c)].filas.push(x);
+    });
+    const cuerpo = grupos.map(g => g.nombre
+      ? (cAct ? subtotalHtml(g.nombre, g.filas) : "") + g.filas.map(filaHtml).join("") + (cAct ? "" : subtotalHtml(g.nombre, g.filas))
+      : g.filas.map(filaHtml).join("")).join("");
+    // Al filtrar por cartera, el pie es el subtotal de la cartera, no el mes entero.
+    const tot = (() => {
+      if (!cAct) return r;
+      const s = { inicio: 0, aportado: 0, mercado: 0, nuevo: 0, fin: 0 };
+      filas.forEach(({ d }) => {
+        s.inicio += d.inicio || 0; s.aportado += d.aportado || 0;
+        s.mercado += d.mercado || 0; s.nuevo += d.nuevo || 0; s.fin += d.fin || 0;
+      });
+      return s;
+    })();
+    const cambioTot = tot.fin - tot.inicio;
     $("#mesTabla").innerHTML =
       `<thead><tr><th>Componente</th><th>Al empezar</th><th>Aportaste</th>
         <th>Mercado</th>${colNuevo}<th>Al cerrar</th><th>Variación</th></tr></thead>
-       <tbody>${filas.map(({ p, d }) => {
-        const var_ = d.fin - d.inicio;
-        return `<tr>
-          <td><i class="pt" style="background:${color(p)}"></i>${p.corto || p.nombre}</td>
-          <td>${G.fmtEur(d.inicio)}</td>
-          <td>${d.aportado ? G.fmtEur(d.aportado) : "—"}</td>
-          <td class="${d.mercado >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(d.mercado)}</td>
-          ${hayNuevo ? `<td>${d.nuevo ? G.fmtEur(d.nuevo) : "—"}</td>` : ""}
-          <td>${G.fmtEur(d.fin)}</td>
-          <td class="${var_ >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(var_)}</td></tr>`;
-      }).join("")}</tbody>
-       <tfoot><tr><td>Total</td><td>${G.fmtEur(r.inicio)}</td><td>${G.fmtEur(r.aportado)}</td>
-        <td class="${r.mercado >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(r.mercado)}</td>
-        ${hayNuevo ? `<td>${G.fmtEur(r.nuevo)}</td>` : ""}
-        <td>${G.fmtEur(r.fin)}</td>
-        <td class="${cambio >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(cambio)}</td></tr></tfoot>`;
+       <tbody>${cuerpo}</tbody>
+       <tfoot><tr><td>${cAct ? "◈ " + cAct : "Total"}</td><td>${G.fmtEur(tot.inicio)}</td><td>${G.fmtEur(tot.aportado)}</td>
+        <td class="${tot.mercado >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(tot.mercado)}</td>
+        ${hayNuevo ? `<td>${G.fmtEur(tot.nuevo)}</td>` : ""}
+        <td>${G.fmtEur(tot.fin)}</td>
+        <td class="${cambioTot >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(cambioTot)}</td></tr></tfoot>`;
     $("#mesTablaNota").textContent = r.nuevo
       ? `Incluye ${G.fmtEur(r.nuevo, 0)} que entran al seguimiento este mes.` : "";
 
@@ -840,10 +975,22 @@
      ================================================================ */
   function pintaFondos() {
     const lista = TODOS().filter(p => !vendido(p)).concat(TODOS().filter(vendido));
-    if (!estado.fondo || !buscaProd(estado.fondo)) estado.fondo = lista[0].id;
-    const p = buscaProd(estado.fondo);
+    const esCartera = String(estado.fondo || "").startsWith("cartera:");
+    if (esCartera && !carteras().some(c => "cartera:" + c.nombre === estado.fondo)) estado.fondo = lista[0].id;
+    if (!esCartera && (!estado.fondo || !buscaProd(estado.fondo))) estado.fondo = lista[0].id;
 
     $("#selFondo").innerHTML = "";
+    // Primero las carteras (1 posición), luego los productos sueltos.
+    carteras().forEach(ct => {
+      const id = "cartera:" + ct.nombre;
+      const b = document.createElement("button");
+      b.style.setProperty("--c", color(ct.productos[0]));
+      b.setAttribute("aria-pressed", String(estado.fondo === id));
+      b.innerHTML = `<i></i>◈ ${ct.nombre} (${ct.productos.length})`;
+      b.title = `Ver la cartera ${ct.nombre} agrupada`;
+      b.onclick = () => { estado.fondo = id; pintaFondos(); };
+      $("#selFondo").appendChild(b);
+    });
     lista.forEach(x => {
       const b = document.createElement("button");
       b.style.setProperty("--c", color(x));
@@ -854,9 +1001,77 @@
       $("#selFondo").appendChild(b);
     });
 
+    if (String(estado.fondo || "").startsWith("cartera:")) {
+      pintaFichaCartera(estado.fondo.slice(8));
+      return;
+    }
+    const p = buscaProd(estado.fondo);
     pintaFichaFondo(p);
     pintaExposicion(p);
     pintaTablaFondo(p);
+  }
+
+  // Ficha de una cartera agrupada: el subtotal como 1 posición y el desglose dentro.
+  function pintaFichaCartera(nombre) {
+    const miembros = TODOS().filter(p => (p.cartera || "") === nombre);
+    const sec = $("#fondoFicha");
+    if (!miembros.length) {
+      sec.innerHTML = `<header><h2>◈ ${escH(nombre)}</h2></header><p class="vacio">Esta cartera ya no tiene fondos.</p>`;
+      $("#fondoExpo").hidden = true;
+      $("#fondoTabla").innerHTML = "";
+      return;
+    }
+    const m = metricas(miembros);
+    const pl = m.plusvalia, rt = m.rentabilidad;
+    const cls = v => (v == null || v >= 0 ? "pos" : "neg");
+    sec.style.setProperty("--c", color(miembros[0]));
+    sec.innerHTML = `
+      <header>
+        <h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${color(miembros[0])};margin-right:9px"></span>◈ ${escH(nombre)}</h2>
+        <div class="sep"></div>
+        <div class="segm" id="segRangoFondo"></div>
+      </header>
+      <p class="subt" style="margin:0 0 16px">${miembros.length} fondos agrupados: 1 posición fuera, ${miembros.length} dentro.</p>
+      <div class="ventanas"><span class="grupoEtq">La cartera agrupada</span>
+        <div class="ventana"><div class="e">Valor hoy</div><div class="v">${G.fmtEur(m.valor)}</div></div>
+        <div class="ventana"><div class="e">Aportado</div><div class="v">${m.aportado ? G.fmtEur(m.aportado) : "—"}</div></div>
+        <div class="ventana"><div class="e">Plusvalía</div><div class="v ${cls(pl)}">${pl != null ? `${G.fmtEurSigno(pl)} · ${G.fmtPctSigno(rt, 2)}` : "—"}</div></div>
+        <div class="ventana"><div class="e">TIR</div><div class="v ${cls(m.tir)}">${m.tir != null ? G.fmtPctSigno(m.tir) : "—"}</div></div>
+        <div class="ventana"><div class="e">Peso en el patrimonio</div><div class="v">${G.fmtPct(miembros.reduce((s, p) => s + (p.peso || 0), 0), 1)}</div></div>
+      </div>
+      <div class="envGraf" id="grafFondo"></div>
+      <div class="subt" style="margin:10px 0 0">Curva suma de sus ${miembros.length} fondos, contra lo aportado.</div>`;
+    pintaSegm($("#segRangoFondo"), RANGOS, estado.rangoFondo,
+      id => { estado.rangoFondo = id; pintaFichaCartera(nombre); });
+    const i0 = desdeIdx(estado.rangoFondo);
+    const cortaF = arr => (arr || []).slice(i0);
+    G.lineaConEventos($("#grafFondo"), {
+      fechas: cortaF(D.fechas), valores: cortaF(m.serie),
+      color: color(miembros[0]), alto: 280, desdeCero: true,
+      overlay: { nombre: "Aportado", valores: cortaF(m.serieAportado) },
+      formatoY: v => G.fmtEur(v, v > 500 ? 0 : 2),
+    });
+    $("#fondoExpo").hidden = true;
+    const filas = miembros.map(p => {
+      const plp = plusvaliaDe(p);
+      const rtP = plp ? plp.pct : null;
+      return `<tr data-fondo="${p.id}">
+        <td><i class="pt" style="background:${color(p)}"></i>${p.corto || p.nombre}</td>
+        <td>${G.fmtEur(valorDe(p))}</td>
+        <td>${p.aportado != null ? G.fmtEur(p.aportado) : "—"}</td>
+        <td class="${(plp == null || plp.eur >= 0) ? "pos" : "neg"}">${plp ? G.fmtEurSigno(plp.eur) : "—"}</td>
+        <td class="${(rtP == null || rtP >= 0) ? "pos" : "neg"}">${rtP != null ? G.fmtPctSigno(rtP, 1) : "—"}</td>
+        <td class="${(p.tir == null || p.tir >= 0) ? "pos" : "neg"}">${p.tir != null ? G.fmtPctSigno(p.tir) : "—"}</td></tr>`;
+    }).join("");
+    $("#fondoTabla").innerHTML = `<header><h2>Fondos dentro de ◈ ${escH(nombre)}</h2>
+        <span class="subt">Pulsa uno para abrir su ficha</span></header>
+      <div class="tablaEnv"><table class="dt"><thead><tr><th>Fondo</th><th>Valor</th><th>Aportado</th>
+        <th>Plusvalía</th><th>Rent.</th><th>TIR</th></tr></thead>
+        <tbody>${filas}</tbody></table></div>`;
+    $("#fondoTabla").querySelectorAll("[data-fondo]").forEach(tr => {
+      tr.style.cursor = "pointer";
+      tr.onclick = () => { estado.fondo = tr.dataset.fondo; pintaFondos(); };
+    });
   }
 
   // «Ganancia total = precio + ventas + dividendos − comisiones», con las partes que tenga.
@@ -1142,9 +1357,27 @@
         "Tu cartera completa, limpia del efecto de cuándo metiste el dinero. * año incompleto.";
 
       // Solo TU rentabilidad, por producto y año.
-      $("#notaTablaAnual").textContent =
-        "Tu rentabilidad en cada producto y año, desde el precio real al que compraste y con comisiones. "
+      const cActR = carteraActiva();
+      const selA = $("#anualCartera");
+      if (selA) {
+        const lista = carteras();
+        const html = `<option value="">Todos</option>` +
+          lista.map(c => `<option value="${escH(c.nombre)}">◈ ${escH(c.nombre)}</option>`).join("");
+        if (selA.innerHTML !== html) selA.innerHTML = html;
+        selA.value = cActR || "";
+        selA.hidden = !lista.length;
+        selA.onchange = () => { verSoloCartera(selA.value || null); pintaRendimiento(); };
+      }
+      let notaAnual = "Tu rentabilidad en cada producto y año, desde el precio real al que compraste y con comisiones. "
         + "En un año completo coincide con la rentabilidad publicada del producto; el primer año cuenta desde tu primera compra.";
+      if (cActR) {
+        const mA = metricas(D.productos.filter(p => (p.cartera || "") === cActR));
+        const rtA = mA.rentabilidad, plA = mA.plusvalia;
+        notaAnual = `◈ ${cActR} agrupada: ${G.fmtEur(mA.valor)} · aportado ${mA.aportado ? G.fmtEur(mA.aportado, 0) : "—"}`
+          + ` · ${plA != null ? G.fmtEurSigno(plA, 0) + " (" + G.fmtPctSigno(rtA, 1) + ")" : "—"}`
+          + ` · TIR ${mA.tir != null ? G.fmtPctSigno(mA.tir) : "—"}. Abajo, sus fondos por año.`;
+      }
+      $("#notaTablaAnual").textContent = notaAnual;
       const verProducto = false;
       const tabla = ra.porProducto;
       const desde = ra.desde || {};
@@ -1154,15 +1387,15 @@
         ? `<td class="subt">${verProducto ? "—" : vendido ? "ya lo habías vendido" : "aún no lo tenías"}</td>`
         : `<td class="${v >= 0 ? "pos" : "neg"}">${G.fmtPctSigno(v, 1)}` +
           `${d ? `<span class="subt" style="font-weight:400"> · desde ${corto(d)}</span>` : ""}</td>`;
-      const prods = D.productos.filter(p => tabla[p.id]);
+      const prods = D.productos.filter(p => tabla[p.id] && (!cActR || (p.cartera || "") === cActR));
       $("#tablaAnual").innerHTML =
         `<thead><tr><th>Producto</th>${ra.anos.map((a, i) =>
           `<th>${a}${ra.parcial[i] ? " *" : ""}</th>`).join("")}</tr></thead>
          <tbody>${prods.map(p => `<tr>
-           <td><i class="pt" style="background:${color(p)}"></i>${p.corto}</td>
+            <td><i class="pt" style="background:${color(p)}"></i>${p.corto}${p.cartera ? ` <small style="color:var(--tinta3)">· ${escH(p.cartera)}</small>` : ""}</td>
            ${tabla[p.id].map((v, i) => celda(v, (desde[p.id] || [])[i], ((ra.vendido || {})[p.id] || [])[i])).join("")}
-         </tr>`).join("")}</tbody>` +
-        (verProducto ? "" : `<tfoot><tr><td>Tu cartera</td>${ra.cartera.map(v =>
+         </tr>`).join("")}         </tbody>` +
+        ((verProducto || cActR) ? "" : `<tfoot><tr><td>Tu cartera</td>${ra.cartera.map(v =>
           `<td class="${v == null ? "" : v >= 0 ? "pos" : "neg"}">${G.fmtPctSigno(v, 1)}</td>`).join("")}</tr></tfoot>`);
     }
 

@@ -87,6 +87,7 @@ Todo lo que pedisteis en los comentarios del vídeo y en GitHub, por orden de im
 - **Comparación con un indexado**: con tus mismas aportaciones, ¿cuánto tendrías en el MSCI World, el S&P 500 o una cartera 60/40?
 - **Traspasos entre fondos y planes**: el coste y la antigüedad pasan al nuevo, como hace Hacienda, sin contar como venta.
 - **Perfiles**: la cartera de tu pareja o de tus hijos, cada una aparte, y **«Todos juntos»** para ver la suma.
+- **Carteras agrupadas**: etiqueta varios fondos como `Metal` y míralos como 1 posición (subtotal, TIR y curva) en Patrimonio, Mes, Rendimiento y Fondos; con «Ver solo» filtras todo el panel a esa cartera.
 - **Dónde está tu dinero de verdad**: tu reparto por **países y sectores**, sumando todos tus fondos, ETF, planes y acciones.
 - **Planes de pensiones con precio automático**: los encuentras por su nombre.
 - **Tu reparto objetivo**: un semáforo te avisa cuando te desvías y te dice dónde meter la próxima aportación para volver a cuadrar.
@@ -262,6 +263,8 @@ Todo está en la pestaña **Mis datos**.
 Los **planes de pensiones** se buscan por su nombre (`MyInvestor Indexado Global`): si están en Morningstar, salen con su precio y se actualizan solos.
 
 ¿No aparece o no tiene precio en internet (un depósito, oro físico, un piso)? Créalo igual y elige **«Valor anotado a mano»** como fuente del precio.
+
+**Carteras como la Metal de MyInvestor** (varios fondos que se ven como 1 posición): en cada fondo, en **«Cómo se muestra» → Cartera**, escribe `Metal`. En el panel verás la sección **Carteras** con su subtotal, y con **«Ver solo»** (o el selector ◈ de cada pestaña) todo —Patrimonio, Mes, Rendimiento y Fondos— muestra solo esa cartera agrupada. Si el mismo ISIN está dentro y fuera de la cartera, al importar pon la columna `cartera` para que no se mezclen.
 
 **¿Tenías un plan de pensiones anotado a mano y ahora sale en el buscador?** Puedes dejarlo como está. Para que se actualice solo: crea el plan con el buscador y haz un **traspaso** desde el antiguo (**Movimientos → «⇄ Traspaso»**) con fecha de hoy, marcando «Lo traspaso todo» y poniendo las **participaciones que tienes hoy** en el nuevo. Lo que llevas aportado pasa al plan nuevo, la curva de antes se conserva y nada cuenta dos veces.
 

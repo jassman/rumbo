@@ -223,7 +223,7 @@
   function agrupa(lista, campo) {
     const acc = new Map();
     lista.forEach(p => {
-      const k = p[campo] || "Otros";
+      const k = p[campo] || (campo === "cartera" ? "Sin cartera" : "Otros");
       const g = acc.get(k) || { nombre: k, valor: 0, color: color(p) };
       g.valor += valorDe(p);
       acc.set(k, g);
@@ -453,7 +453,7 @@
       const plTarjeta = plusvaliaDe(p);
       const rent = plTarjeta ? plTarjeta.pct : null;
       b.innerHTML = `<span class="barra"></span>
-        <div class="nm"><i></i>${p.corto || p.nombre}</div>
+        <div class="nm"><i></i>${p.corto || p.nombre}${p.cartera ? ` <small style="color:var(--tinta3)">· ${p.cartera}</small>` : ""}</div>
         <div class="vl">${G.fmtEur(valorDe(p))}</div>
         <div class="pi"><span>${oculto ? "fuera del gráfico" : G.fmtPct(p.peso, 1) + " del total"}</span>
           <span class="${rent == null ? "" : rent >= 0 ? "pos" : "neg"}">${rent == null ? "—" : G.fmtPctSigno(rent, 1)}</span></div>
@@ -735,7 +735,8 @@
     ], estado.vista, id => { estado.vista = id; pintaPatrimonio(); });
     pintaSegm($("#segDist"), [
       { id: "clase", et: "Activo" }, { id: "producto", et: "Producto" },
-      { id: "entidad", et: "Entidad" }, { id: "tipo", et: "Tipo" }
+      { id: "entidad", et: "Entidad" }, { id: "tipo", et: "Tipo" },
+      { id: "cartera", et: "Cartera" }
     ], estado.dist, id => { estado.dist = id; pintaDistribucion(); });
     pintaSegm($("#segTabla"), [{ id: "todos", et: "Todos" }].concat(
       D.productos.filter(p => (p.aportaciones || []).some(a => a.importe))
@@ -891,7 +892,7 @@
     const campos = [
       ["Tipo", p.tipo], ["ISIN", p.isin], ["Índice que replica", p.indice],
       ["Comisión anual (TER)", p.ter != null ? G.fmtPct(p.ter, 2) : null],
-      ["Entidad", p.entidad], ["Gestora", p.gestora],
+      ["Entidad", p.entidad], ["Cartera", p.cartera], ["Gestora", p.gestora],
       ["Política", p.politica], ["Mercado", p.mercado],
       [p.origen ? "Primera aportación" : "Primer dato anotado", p.desde ? G.fmtFecha(p.desde) : null],
       [p.etqUnidades || "Participaciones",

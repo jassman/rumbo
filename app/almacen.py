@@ -210,8 +210,8 @@ def guarda_reparto(cfg, datos):
 
 # ---------------------------------------------------------------- productos
 
-CAMPOS_TEXTO = ("nombre", "corto", "identificador", "codigo", "entidad", "clase", "gestora",
-                "tipoDetalle", "respaldo", "respaldoMoneda", "vivo", "papel", "expoComo")
+CAMPOS_TEXTO = ("nombre", "corto", "identificador", "codigo", "entidad", "clase", "cartera", "gestora",
+               "tipoDetalle", "respaldo", "respaldoMoneda", "vivo", "papel", "expoComo")
 
 
 def guarda_producto(cfg, datos):

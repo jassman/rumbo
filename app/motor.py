@@ -1697,6 +1697,7 @@ def construir(cfg, carpeta, descargar=True, cache=None, historico=True):
             "porClase": agrupar("clase"),
             "porEntidad": agrupar("entidad"),
             "porTipo": agrupar("tipo"),
+            "porCartera": agrupar("cartera"),
             "hitos": hitos,
             "racha": racha,
             "ritmoMensual": ritmo,

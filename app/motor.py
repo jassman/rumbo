@@ -1587,6 +1587,39 @@ def construir(cfg, carpeta, descargar=True, cache=None, historico=True):
             rent_anual["porProducto"][p["id"]].append(r4(ix[fin] / bb - 1))
             rent_anual["desde"][p["id"]].append(eje_iso[i0] if empieza_aqui else None)
 
+    # --- rentabilidad por cartera agrupada: 1 posición = suma de sus fondos ---
+    nombres_cart = []
+    for p in inv:
+        if p.get("cartera") and p["cartera"] not in nombres_cart:
+            nombres_cart.append(p["cartera"])
+    serie_cart, flujo_cart = {}, {}
+    for nombre in nombres_cart:
+        miembros = [p for p in inv if p.get("cartera") == nombre]
+        sc, fc = [], [0.0] * n
+        for i in range(n):
+            vals = [p["serie"][i] for p in miembros]
+            sc.append(round(sum(v or 0 for v in vals), 2) if any(v is not None for v in vals) else None)
+            fc[i] = sum(flujo_prod[p["id"]][i] for p in miembros)
+        serie_cart[nombre], flujo_cart[nombre] = sc, fc
+    idx_cart = {nombre: indice_twr(serie_cart[nombre], flujo_cart[nombre]) for nombre in nombres_cart}
+    primer_cart = {nombre: next((i for i, v in enumerate(serie_cart[nombre]) if v is not None), None)
+                   for nombre in nombres_cart}
+    rent_anual["carteras"] = nombres_cart
+    rent_anual["porCartera"] = {nombre: [] for nombre in nombres_cart}
+    for ano in anos_nat:
+        ini = next(i for i, f in enumerate(eje_iso) if f[:4] == ano)
+        fin = max(i for i, f in enumerate(eje_iso) if f[:4] == ano)
+        base_ano = ini - 1 if ini > 0 else None
+        for nombre in nombres_cart:
+            i0 = primer_cart[nombre]
+            if i0 is None or i0 > fin:
+                rent_anual["porCartera"][nombre].append(None)
+                continue
+            ix = idx_cart[nombre]
+            empieza_aqui = base_ano is None or i0 > base_ano
+            bb = 100.0 if empieza_aqui else ix[base_ano]
+            rent_anual["porCartera"][nombre].append(r4(ix[fin] / bb - 1) if bb else None)
+
     # --- resumen mes a mes ---
     meses_nat = sorted({f[:7] for f in eje_iso})
     resumen_mensual = []

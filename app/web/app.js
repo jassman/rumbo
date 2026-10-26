@@ -100,6 +100,7 @@
     btcVivo: null,
     compRef: recuerda.lee("patrimonio.compRef") || "mundo",
     soloCartera: recuerda.lee("patrimonio.cartera") || null,
+    agrupar: recuerda.lee("patrimonio.agrupar") !== "0",
     verVendidos: recuerda.lee("patrimonio.vendidos") === "1",
     moneda: recuerda.lee("patrimonio.moneda") || "EUR",
     rangoFondo: "todo",
@@ -214,6 +215,25 @@
     const c = carteraActiva();
     return !c || (p.cartera || "") === c;
   };
+  // Por defecto las carteras se ven como 1 posición (Metal, no sus 7 fondos).
+  // Se desglosan al pulsar «Ver solo» (ver por separado) o al desactivar «Agrupar».
+  const desglosado = () => !estado.agrupar || !!carteraActiva();
+  const verAgrupar = v => {
+    estado.agrupar = v;
+    recuerda.guarda("patrimonio.agrupar", v ? "1" : "0");
+    estado.tablaFiltro = "todos";
+  };
+  // Serie suma de varios productos (para la gráfica agrupada): null donde no hay dato.
+  const sumaSeries = arrs => {
+    const n = Math.max(0, ...arrs.map(a => (a || []).length));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      let s = 0, hay = false;
+      arrs.forEach(a => { const v = a && a[i]; if (v != null) { s += v; hay = true; } });
+      out.push(hay ? Math.round(s * 100) / 100 : null);
+    }
+    return out;
+  };
   const visibles = () => TODOS().filter(p => !estado.ocultos.has(p.id) && enCarteraActiva(p));
   const filtrando = () => estado.ocultos.size > 0 || !!carteraActiva();
   const buscaProd = id => TODOS().find(p => p.id === id);
@@ -298,7 +318,7 @@
   function pintaFiltros() {
     const cont = $("#filtros");
     cont.innerHTML = "";
-    enPanel().forEach(p => {
+    const botonProducto = p => {
       const on = !estado.ocultos.has(p.id);
       const b = document.createElement("button");
       b.className = "filtro";
@@ -312,7 +332,31 @@
         pintaPatrimonio();
       };
       cont.appendChild(b);
-    });
+    };
+    if (!desglosado()) {
+      // Agrupado: un botón por cartera (enciende/apaga sus fondos a la vez) + sueltos.
+      carteras().forEach(ct => {
+        const ids = ct.productos.map(p => p.id);
+        const on = ids.some(id => !estado.ocultos.has(id));
+        const b = document.createElement("button");
+        b.className = "filtro";
+        b.style.setProperty("--c", color(ct.productos[0]));
+        b.setAttribute("aria-pressed", String(on));
+        b.title = on ? "Quitar la cartera del gráfico y de las métricas" : "Volver a incluirla";
+        b.innerHTML = `<i></i>◈ ${ct.nombre}<span class="im">${G.fmtEurCorto(pesoCartera(ct))}</span>`;
+        b.onclick = () => {
+          if (on) {
+            if (!visibles().some(p => !ids.includes(p.id))) return;
+            ids.forEach(id => estado.ocultos.add(id));
+          } else ids.forEach(id => estado.ocultos.delete(id));
+          pintaPatrimonio();
+        };
+        cont.appendChild(b);
+      });
+      TODOS().filter(p => !p.cartera).forEach(botonProducto);
+    } else {
+      TODOS().forEach(botonProducto);
+    }
     const sep = document.createElement("span");
     sep.className = "filtroSep";
     cont.appendChild(sep);
@@ -341,7 +385,19 @@
       b.onclick = () => { pr.fn(); pintaPatrimonio(); };
       cont.appendChild(b);
     });
-    // Una cartera, una posición: ver solo sus fondos agrupados en todo el panel.
+    // Agrupar / desglosar: por defecto las carteras son 1 posición en todo el panel.
+    if (carteras().length) {
+      const b = document.createElement("button");
+      b.className = "filtro preset";
+      b.setAttribute("aria-pressed", String(estado.agrupar));
+      b.textContent = estado.agrupar ? "Desglosar carteras" : "Agrupar carteras";
+      b.title = estado.agrupar
+        ? "Ver los fondos de cada cartera por separado"
+        : "Ver cada cartera como 1 posición (sus fondos sumados)";
+      b.onclick = () => { verAgrupar(!estado.agrupar); pintaPatrimonio(); };
+      cont.appendChild(b);
+    }
+    // Una cartera, una posición: ver solo sus fondos por separado en todo el panel.
     carteras().forEach(ct => {
       const b = document.createElement("button");
       b.className = "filtro preset";
@@ -433,6 +489,26 @@
         ? `Métricas de los ${visibles().length} componentes activos, no del patrimonio completo.` : "";
   }
 
+  // Series del gráfico: por producto, o una por cartera (sus fondos sumados).
+  function entradasGrafico(lista) {
+    if (desglosado()) {
+      return lista.map(p => ({ id: p.id, nombre: p.corto || p.nombre, color: color(p), valores: corta(p.serie) }));
+    }
+    const grupos = new Map(), sueltos = [];
+    lista.forEach(p => {
+      const c = p.cartera || "";
+      if (!c) { sueltos.push(p); return; }
+      if (!grupos.has(c)) grupos.set(c, []);
+      grupos.get(c).push(p);
+    });
+    const out = [...grupos.entries()].map(([nombre, ps]) => ({
+      id: "cartera:" + nombre, nombre: "◈ " + nombre, color: color(ps[0]),
+      valores: corta(sumaSeries(ps.map(p => p.serie))),
+    }));
+    sueltos.forEach(p => out.push({ id: p.id, nombre: p.corto || p.nombre, color: color(p), valores: corta(p.serie) }));
+    return out;
+  }
+
   function pintaPrincipal(m) {
     const fechas = corta(D.fechas);
     const prods = visibles().filter(p => (p.serie || []).some(v => v));
@@ -460,7 +536,7 @@
         ? "Hubo días por debajo de lo aportado: ahí la banda verde desaparece."
         : "La banda verde es rentabilidad, no dinero tuyo.";
     } else if (estado.vista === "reparto") {
-      const series = prods.map(p => ({ id: p.id, nombre: p.corto || p.nombre, color: color(p), valores: corta(p.serie) }));
+      const series = entradasGrafico(prods);
       const tot = fechas.map((_, i) => series.reduce((a, s) => a + (s.valores[i] || 0), 0));
       series.forEach(s => { s.valores = s.valores.map((v, i) => tot[i] ? (v || 0) / tot[i] * 100 : 0); });
       G.areaApilada(cont, {
@@ -471,7 +547,7 @@
     } else {
       G.areaApilada(cont, {
         fechas, alto: 330,
-        series: prods.map(p => ({ id: p.id, nombre: p.corto || p.nombre, color: color(p), valores: corta(p.serie) })),
+        series: entradasGrafico(prods),
         overlay: { nombre: "Aportado", valores: corta(m.serieAportado) },
       });
       const tardios = visibles().filter(p => p.desde && p.desde > D.fechas[0] && p.aportado == null);
@@ -486,23 +562,46 @@
   function pintaChips() {
     const cont = $("#chips");
     cont.innerHTML = "";
+    const chip = (nombre, valor, peso, rent, serie, col, alPulsar, apagado) => {
+      const b = document.createElement("button");
+      b.className = "chip" + (apagado ? " apagado" : "");
+      b.style.setProperty("--c", col);
+      b.innerHTML = `<span class="barra"></span>
+        <div class="nm"><i></i>${nombre}</div>
+        <div class="vl">${G.fmtEur(valor)}</div>
+        <div class="pi"><span>${apagado ? "fuera del gráfico" : G.fmtPct(peso, 1) + " del total"}</span>
+          <span class="${rent == null ? "" : rent >= 0 ? "pos" : "neg"}">${rent == null ? "—" : G.fmtPctSigno(rent, 1)}</span></div>
+        <div class="sp"></div>`;
+      b.onclick = alPulsar;
+      cont.appendChild(b);
+      G.mini(b.querySelector(".sp"), corta(serie), col);
+    };
+    if (!desglosado()) {
+      // 1 chip por cartera (suma de sus fondos) + sueltos.
+      const vis = new Set(visibles().map(p => p.id));
+      carteras().forEach(ct => {
+        const m = metricas(ct.productos);
+        const apagado = !ct.productos.some(p => vis.has(p.id));
+        chip(`◈ ${ct.nombre} (${ct.productos.length})`, m.valor,
+          ct.productos.reduce((s, p) => s + (p.peso || 0), 0),
+          m.rentabilidad, m.serie, color(ct.productos[0]),
+          () => { estado.fondo = "cartera:" + ct.nombre; irA("fondos"); }, apagado);
+      });
+      enPanel().filter(p => !p.cartera).forEach(p => {
+        const plTarjeta = plusvaliaDe(p);
+        chip(p.corto || p.nombre, valorDe(p), p.peso, plTarjeta ? plTarjeta.pct : null,
+          p.serie, color(p), () => { estado.fondo = p.id; irA("fondos"); }, estado.ocultos.has(p.id));
+      });
+      return;
+    }
     const cAct = carteraActiva();
     enPanel().filter(p => !cAct || (p.cartera || "") === cAct).forEach(p => {
       const oculto = estado.ocultos.has(p.id);
-      const b = document.createElement("button");
-      b.className = "chip" + (oculto ? " apagado" : "");
-      b.style.setProperty("--c", color(p));
       const plTarjeta = plusvaliaDe(p);
       const rent = plTarjeta ? plTarjeta.pct : null;
-      b.innerHTML = `<span class="barra"></span>
-        <div class="nm"><i></i>${p.corto || p.nombre}${p.cartera ? ` <small style="color:var(--tinta3)">· ${p.cartera}</small>` : ""}</div>
-        <div class="vl">${G.fmtEur(valorDe(p))}</div>
-        <div class="pi"><span>${oculto ? "fuera del gráfico" : G.fmtPct(p.peso, 1) + " del total"}</span>
-          <span class="${rent == null ? "" : rent >= 0 ? "pos" : "neg"}">${rent == null ? "—" : G.fmtPctSigno(rent, 1)}</span></div>
-        <div class="sp"></div>`;
-      b.onclick = () => { estado.fondo = p.id; irA("fondos"); };
-      cont.appendChild(b);
-      G.mini(b.querySelector(".sp"), corta(p.serie), color(p));
+      chip(`${p.corto || p.nombre}${p.cartera ? ` <small style="color:var(--tinta3)">· ${p.cartera}</small>` : ""}`,
+        valorDe(p), p.peso, rent, p.serie, color(p),
+        () => { estado.fondo = p.id; irA("fondos"); }, oculto);
     });
   }
 
@@ -564,9 +663,27 @@
     const idx = am.meses.findIndex(m => m >= desde);
     const i0 = idx < 0 ? am.meses.length : idx;
     const meses = am.meses.slice(i0);
-    const series = visibles()
-      .filter(p => (am.porProducto[p.id] || []).some(v => v))
-      .map(p => ({ nombre: p.corto || p.nombre, color: color(p), valores: am.porProducto[p.id].slice(i0) }));
+    const conAport = visibles().filter(p => (am.porProducto[p.id] || []).some(v => v));
+    let series;
+    if (desglosado()) {
+      series = conAport
+        .map(p => ({ nombre: p.corto || p.nombre, color: color(p), valores: am.porProducto[p.id].slice(i0) }));
+    } else {
+      // Una barra por cartera (sus fondos sumados) + sueltos.
+      const grupos = new Map(), sueltas = [];
+      conAport.forEach(p => {
+        const c = p.cartera || "";
+        if (!c) { sueltas.push(p); return; }
+        if (!grupos.has(c)) grupos.set(c, []);
+        grupos.get(c).push(p);
+      });
+      series = [...grupos.entries()].map(([nombre, ps]) => {
+        const vals = am.porProducto[ps[0].id].map((_, i) =>
+          ps.reduce((s, p) => s + ((am.porProducto[p.id] || [])[i] || 0), 0));
+        return { nombre: "◈ " + nombre, color: color(ps[0]), valores: vals.slice(i0) };
+      });
+      sueltas.forEach(p => series.push({ nombre: p.corto || p.nombre, color: color(p), valores: am.porProducto[p.id].slice(i0) }));
+    }
     G.barrasApiladas($("#grafBarras"), { categorias: meses, alto: 236, series });
     const suma = meses.reduce((a, _, i) => a + series.reduce((b, s) => b + (s.valores[i] || 0), 0), 0);
     $("#notaAport").textContent = meses.length
@@ -745,21 +862,56 @@
   }
 
   function pintaTabla() {
-    const filas = [];
-    const cAct = carteraActiva();
+    const base = [];
     D.productos.forEach(p => {
-      if (cAct && (p.cartera || "") !== cAct) return;
       (p.aportaciones || []).forEach(a => {
         if (!a.importe) return;
-        filas.push({
-          fecha: a.fecha, producto: p.corto || p.nombre, color: color(p), id: p.id,
+        base.push({
+          fecha: a.fecha, producto: p.corto || p.nombre, cartera: p.cartera || "", color: color(p), id: p.id,
           importe: a.importe, valor: a.valor,
           pl: a.valor != null ? a.valor - a.importe : null,
           rent: a.valor != null && a.importe ? (a.valor - a.importe) / a.importe : null,
         });
       });
     });
-    const f = estado.tablaFiltro === "todos" ? filas : filas.filter(x => x.id === estado.tablaFiltro);
+    // Agrupado: una fila por fecha y cartera (suma de sus fondos); con filtro se desglosa.
+    const groupedRows = () => {
+      const grupos = new Map(), sueltas = [];
+      base.forEach(r => {
+        if (!r.cartera) { sueltas.push(r); return; }
+        const k = r.cartera + "|" + r.fecha;
+        if (!grupos.has(k)) grupos.set(k, []);
+        grupos.get(k).push(r);
+      });
+      const agg = [...grupos.values()].map(rs => {
+        const imp = rs.reduce((s, r) => s + r.importe, 0);
+        const conValor = rs.filter(r => r.valor != null);
+        const val = conValor.length ? conValor.reduce((s, r) => s + r.valor, 0) : null;
+        return {
+          fecha: rs[0].fecha, producto: "◈ " + rs[0].cartera, cartera: rs[0].cartera,
+          color: rs[0].color, id: "cartera:" + rs[0].cartera,
+          importe: Math.round(imp * 100) / 100, valor: val == null ? null : Math.round(val * 100) / 100,
+          pl: val != null ? val - imp : null,
+          rent: val != null && imp ? (val - imp) / imp : null,
+        };
+      });
+      return sueltas.concat(agg);
+    };
+    const cAct = carteraActiva();
+    const tf = estado.tablaFiltro;
+    let filas;
+    if (tf !== "todos") {
+      filas = tf.startsWith("cartera:")
+        ? base.filter(x => x.cartera === tf.slice(8))
+        : base.filter(x => x.id === tf);
+    } else if (cAct) {
+      filas = base.filter(x => x.cartera === cAct);
+    } else if (estado.agrupar) {
+      filas = groupedRows();
+    } else {
+      filas = base;
+    }
+    const f = filas;
     const o = estado.ordenTabla;
     f.sort((a, b) => {
       const va = a[o.col], vb = b[o.col];
@@ -819,9 +971,10 @@
       { id: "entidad", et: "Entidad" }, { id: "tipo", et: "Tipo" },
       { id: "cartera", et: "Cartera" }
     ], estado.dist, id => { estado.dist = id; pintaDistribucion(); });
-    pintaSegm($("#segTabla"), [{ id: "todos", et: "Todos" }].concat(
-      D.productos.filter(p => (p.aportaciones || []).some(a => a.importe))
-        .map(p => ({ id: p.id, et: p.corto || p.nombre }))),
+    pintaSegm($("#segTabla"), [{ id: "todos", et: "Todos" }]
+      .concat(carteras().map(c => ({ id: "cartera:" + c.nombre, et: "◈ " + c.nombre })))
+      .concat(D.productos.filter(p => (p.aportaciones || []).some(a => a.importe))
+        .map(p => ({ id: p.id, et: (p.cartera ? "· " : "") + (p.corto || p.nombre) }))),
       estado.tablaFiltro, id => { estado.tablaFiltro = id; pintaTabla(); });
   }
 
@@ -932,9 +1085,16 @@
       if (!pos.has(c)) { pos.set(c, grupos.length); grupos.push({ nombre: c, filas: [] }); }
       grupos[pos.get(c)].filas.push(x);
     });
-    const cuerpo = grupos.map(g => g.nombre
-      ? (cAct ? subtotalHtml(g.nombre, g.filas) : "") + g.filas.map(filaHtml).join("") + (cAct ? "" : subtotalHtml(g.nombre, g.filas))
-      : g.filas.map(filaHtml).join("")).join("");
+    // Agrupado y sin filtro: solo el subtotal por cartera (sus fondos no salen sueltos).
+    // Con «Ver solo» o desglosado: los fondos por separado más su subtotal.
+    const agrupSolo = !cAct && estado.agrupar;
+    const cuerpo = grupos.map(g => {
+      if (!g.nombre) return g.filas.map(filaHtml).join("");
+      if (agrupSolo) return subtotalHtml(g.nombre, g.filas);
+      const miembros = g.filas.map(filaHtml).join("");
+      const sub = subtotalHtml(g.nombre, g.filas);
+      return cAct ? sub + miembros : miembros + sub;
+    }).join("");
     // Al filtrar por cartera, el pie es el subtotal de la cartera, no el mes entero.
     const tot = (() => {
       if (!cAct) return r;
@@ -978,6 +1138,12 @@
     const esCartera = String(estado.fondo || "").startsWith("cartera:");
     if (esCartera && !carteras().some(c => "cartera:" + c.nombre === estado.fondo)) estado.fondo = lista[0].id;
     if (!esCartera && (!estado.fondo || !buscaProd(estado.fondo))) estado.fondo = lista[0].id;
+    // Filtrando por cartera: la ficha enseña su agregado, no un fondo de fuera.
+    const cActF0 = carteraActiva();
+    if (!esCartera && estado.agrupar && cActF0) {
+      const pf = buscaProd(estado.fondo);
+      if (pf && (pf.cartera || "") !== cActF0) estado.fondo = "cartera:" + cActF0;
+    }
 
     $("#selFondo").innerHTML = "";
     // Primero las carteras (1 posición), luego los productos sueltos.
@@ -991,7 +1157,13 @@
       b.onclick = () => { estado.fondo = id; pintaFondos(); };
       $("#selFondo").appendChild(b);
     });
+    // Agrupado: solo ◈ + sueltos (o los miembros de la cartera filtrada, para verla por separado).
+    const cActF = cActF0;
     lista.forEach(x => {
+      if (estado.agrupar) {
+        if (x.cartera && x.cartera !== cActF) return;
+        if (!x.cartera && cActF) return;
+      }
       const b = document.createElement("button");
       b.style.setProperty("--c", color(x));
       b.setAttribute("aria-pressed", String(x.id === estado.fondo));
@@ -1387,14 +1559,26 @@
         ? `<td class="subt">${verProducto ? "—" : vendido ? "ya lo habías vendido" : "aún no lo tenías"}</td>`
         : `<td class="${v >= 0 ? "pos" : "neg"}">${G.fmtPctSigno(v, 1)}` +
           `${d ? `<span class="subt" style="font-weight:400"> · desde ${corto(d)}</span>` : ""}</td>`;
-      const prods = D.productos.filter(p => tabla[p.id] && (!cActR || (p.cartera || "") === cActR));
+      // Agrupado y sin filtro: una fila por cartera (suma de sus fondos) + sueltos.
+      // Con «Ver solo» o desglosado: los fondos por separado.
+      const agrupSoloR = !cActR && estado.agrupar;
+      const rep0 = {};
+      D.productos.forEach(p => { if (p.cartera && !rep0[p.cartera]) rep0[p.cartera] = p; });
+      const filasCartera = agrupSoloR ? ((ra.carteras || []).map(nombre => {
+        const vals = ((ra.porCartera || {})[nombre] || []);
+        return `<tr class="destacada">
+          <td><i class="pt" style="background:${color(rep0[nombre] || {})}"></i>◈ ${escH(nombre)}</td>
+          ${ra.anos.map((_, i) => celda(vals[i], null, false)).join("")}</tr>`;
+      }).join("")) : "";
+      const prods = D.productos.filter(p => tabla[p.id]
+        && (cActR ? (p.cartera || "") === cActR : (!estado.agrupar || !p.cartera)));
       $("#tablaAnual").innerHTML =
         `<thead><tr><th>Producto</th>${ra.anos.map((a, i) =>
           `<th>${a}${ra.parcial[i] ? " *" : ""}</th>`).join("")}</tr></thead>
-         <tbody>${prods.map(p => `<tr>
+         <tbody>${filasCartera}${prods.map(p => `<tr>
             <td><i class="pt" style="background:${color(p)}"></i>${p.corto}${p.cartera ? ` <small style="color:var(--tinta3)">· ${escH(p.cartera)}</small>` : ""}</td>
-           ${tabla[p.id].map((v, i) => celda(v, (desde[p.id] || [])[i], ((ra.vendido || {})[p.id] || [])[i])).join("")}
-         </tr>`).join("")}         </tbody>` +
+            ${tabla[p.id].map((v, i) => celda(v, (desde[p.id] || [])[i], ((ra.vendido || {})[p.id] || [])[i])).join("")}
+          </tr>`).join("")}         </tbody>` +
         ((verProducto || cActR) ? "" : `<tfoot><tr><td>Tu cartera</td>${ra.cartera.map(v =>
           `<td class="${v == null ? "" : v >= 0 ? "pos" : "neg"}">${G.fmtPctSigno(v, 1)}</td>`).join("")}</tr></tfoot>`);
     }
@@ -1451,11 +1635,29 @@
     if (c && c.lineas.length) {
       $("#notaComisiones").textContent =
         `${G.fmtEur(c.anual)} al año · ${G.fmtPct(c.terPonderado, 3)} de lo invertido`;
+      // Agrupado: una fila por cartera (TER medio ponderado) + sueltos.
+      let lineas = c.lineas;
+      if (!desglosado()) {
+        const porId = {};
+        D.productos.forEach(p => { porId[p.id] = p; });
+        const grupos = new Map(), sueltas = [];
+        c.lineas.forEach(l => {
+          const cart = (porId[l.id] || {}).cartera || "";
+          if (!cart) { sueltas.push(l); return; }
+          if (!grupos.has(cart)) grupos.set(cart, []);
+          grupos.get(cart).push(l);
+        });
+        lineas = [...grupos.entries()].map(([nombre, ls]) => {
+          const valor = ls.reduce((s, l) => s + l.valor, 0);
+          const anual = ls.reduce((s, l) => s + l.anual, 0);
+          return { nombre: "◈ " + nombre, ter: valor ? anual / valor : null, valor, anual, color: ls[0].color };
+        }).concat(sueltas);
+      }
       $("#tablaComisiones").innerHTML =
         `<thead><tr><th>Producto</th><th>Comisión</th><th>Sobre</th><th>Al año</th><th>Al mes</th></tr></thead>
-         <tbody>${c.lineas.map(l => `<tr>
+         <tbody>${lineas.map(l => `<tr>
             <td><i class="pt" style="background:${temaOscuro() ? l.color[1] : l.color[0]}"></i>${l.nombre}</td>
-            <td>${G.fmtPct(l.ter, 2)}</td><td>${G.fmtEur(l.valor, 0)}</td>
+            <td>${l.ter != null ? G.fmtPct(l.ter, 2) : "—"}</td><td>${G.fmtEur(l.valor, 0)}</td>
             <td>${G.fmtEur(l.anual)}</td><td>${G.fmtEur(l.anual / 12)}</td></tr>`).join("")}</tbody>
          <tfoot><tr><td>Total</td><td>${G.fmtPct(c.terPonderado, 3)}</td>
            <td>${G.fmtEur(c.base, 0)}</td><td>${G.fmtEur(c.anual)}</td>

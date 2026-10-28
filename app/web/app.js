@@ -1328,7 +1328,8 @@
       const plv = plusvaliaDe(p);
       res.push(["En vivo ahora", `${G.fmtEur(valorDe(p))} · ${G.fmtPctSigno(plv.pct, 2)}`]);
     }
-    const conCobros = p.gananciaTotal != null && Math.abs(p.realizado || 0) >= 0.01;
+    const _cobros = p.cobros || {};
+    const conCobros = p.gananciaTotal != null && (Math.abs(p.realizado || 0) >= 0.01 || Math.abs(_cobros.ventas || 0) >= 0.01 || Math.abs(_cobros.dividendos || 0) >= 0.01 || Math.abs(_cobros.gastos || 0) >= 0.01);
     if (conCobros) {
       res.push(["Ganancia total", `<span class="${p.gananciaTotal >= 0 ? "pos" : "neg"}">${G.fmtEurSigno(p.gananciaTotal)}</span>` +
         (p.rentabilidadTotal != null ? ` · ${G.fmtPctSigno(p.rentabilidadTotal, 2)}` : "")]);

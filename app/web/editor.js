@@ -1003,7 +1003,9 @@
           <button class="btn" data-acc="nuevoValor" data-id="${esc(p.id)}">+ Anotar</button></header>
         ${filas ? `<div class="tablaEnv"><table class="dt"><thead><tr><th>Fecha</th><th>${etiquetaValor(p)}</th>
           ${conAportado ? "<th>Aportado</th>" : ""}<th></th></tr></thead><tbody>${filas}</tbody></table></div>`
-          : '<p class="neg">Todavía no tiene ningún valor anotado.</p>'}</section>`;
+          : '<p class="neg">Todavía no tiene ningún valor anotado.</p>'}
+         ${p.tipo === "p2p" ? `<p class="subt" style="margin-top:8px">Intereses cobrados en total: ${eur(E.cfg.movimientos.filter(m => m.producto === p.id && m.tipo === "dividendo").reduce((a, m) => a + (m.importe || 0), 0))}</p>` : ""}
+         ${p.tipo === "inmueble" ? `<p class="subt" style="margin-top:8px">Alquiler cobrado: ${eur(E.cfg.movimientos.filter(m => m.producto === p.id && m.tipo === "dividendo").reduce((a, m) => a + (m.importe || 0), 0))} �� Gastos: ${eur(E.cfg.movimientos.filter(m => m.producto === p.id && m.tipo === "comision").reduce((a, m) => a + (m.importe || 0), 0))}</p>` : ""}</section>`;
     }).join("");
     return `<section class="tarjeta"><header><h2>Saldos y valores</h2>
         <span class="subt">Lo que no tiene precio en internet. Cuanto más a menudo lo anotes (una vez al mes basta),

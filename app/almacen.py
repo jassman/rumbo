@@ -223,7 +223,7 @@ def guarda_producto(cfg, datos):
     tipo = datos.get("tipo")
     if tipo not in TIPOS:
         errores.append("Elige de qué tipo es el producto.")
-    fuente = "manual" if tipo in SOLO_SALDO else datos.get("fuente") or "manual"
+    fuente = "manual" if (tipo in SOLO_SALDO or tipo in ("p2p", "inmueble")) else datos.get("fuente") or "manual"
     if fuente not in FUENTES:
         errores.append("Elige de dónde sale el precio.")
     if fuente != "manual" and not nuevo["codigo"]:

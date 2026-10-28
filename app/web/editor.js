@@ -381,7 +381,8 @@
     f.elements.liquidez.addEventListener("change", () => { liquidezTocada = true; });
     f.addEventListener("change", e => { if (!liquidezTocada && e.target.name !== "liquidez") f.elements.liquidez.checked = liquidezDefecto(); });
     const ajusta = () => {
-      const saldo = SOLO_SALDO.includes(f.elements.tipo.value);
+      if (f.elements.tipo.value === "p2p" || f.elements.tipo.value === "inmueble") f.elements.fuente.value = "manual";
+      const saldo = SOLO_SALDO.includes(f.elements.tipo.value) || f.elements.tipo.value === "p2p" || f.elements.tipo.value === "inmueble";
       const online = !saldo && f.elements.fuente.value !== "manual";
       f.querySelector(".siCotiza").hidden = saldo;
       f.querySelectorAll(".siOnline").forEach(el => { el.hidden = !online; });
